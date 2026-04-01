@@ -14,3 +14,10 @@ unzip $dataset/images/database_and_query_images.zip -d $dataset
 ```bash
 python3 -m hloc.pipelines.Aachen.pipeline
 ```
+
+Use MegaLoc retrieval + LightGlueStick matcher:
+```bash
+python3 -m hloc.pipelines.Aachen.pipeline \
+  --retrieval megaloc \
+  --matcher superpoint+lightgluestick
+```

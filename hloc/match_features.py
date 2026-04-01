@@ -42,6 +42,22 @@ confs = {
             "features": "aliked",
         },
     },
+    "superpoint+lightgluestick": {
+        "output": "matches-superpoint-lightgluestick",
+        "model": {
+            "name": "lightgluestick",
+            "features": "superpoint",
+            "line_features": "lsd",
+        },
+    },
+    "aliked+lightgluestick": {
+        "output": "matches-aliked-lightgluestick",
+        "model": {
+            "name": "lightgluestick",
+            "features": "aliked",
+            "line_features": "lsd",
+        },
+    },
     "superglue": {
         "output": "matches-superglue",
         "model": {
@@ -133,6 +149,18 @@ class FeaturePairsDataset(torch.utils.data.Dataset):
             for k, v in grp.items():
                 data[k + "1"] = torch.from_numpy(v.__array__()).float()
             data["image1"] = torch.empty((1,) + tuple(grp["image_size"])[::-1])
+        # Optional line features used by point-line matchers.
+        # Missing keys are handled in the matcher and allow graceful fallback.
+        for suffix in ("0", "1"):
+            line_keys = {
+                "lines": (0, 4),
+                "line_descriptors": (0, 128),
+                "line_scores": (0,),
+            }
+            for key, shape in line_keys.items():
+                full_key = key + suffix
+                if full_key not in data:
+                    data[full_key] = torch.empty(shape, dtype=torch.float32)
         return data
 
     def __len__(self):
@@ -145,11 +173,16 @@ def writer_fn(inp, match_path):
         if pair in fd:
             del fd[pair]
         grp = fd.create_group(pair)
-        matches = pred["matches0"][0].cpu().short().numpy()
-        grp.create_dataset("matches0", data=matches)
-        if "matching_scores0" in pred:
-            scores = pred["matching_scores0"][0].cpu().half().numpy()
-            grp.create_dataset("matching_scores0", data=scores)
+        tensor_keys = ["matches0", "matching_scores0", "line_matches0", "line_matching_scores0"]
+        for key in tensor_keys:
+            if key not in pred:
+                continue
+            value = pred[key][0].cpu()
+            if key.endswith("matches0"):
+                value = value.short()
+            elif key.endswith("scores0"):
+                value = value.half()
+            grp.create_dataset(key, data=value.numpy())
 
 
 def main(
