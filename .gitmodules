@@ -10,3 +10,9 @@
 [submodule "third_party/r2d2"]
 	path = third_party/r2d2
 	url = https://github.com/naver/r2d2.git
+[submodule "third_party/MegaLoc"]
+	path = third_party/MegaLoc
+	url = https://github.com/gmberton/MegaLoc
+[submodule "third_party/LightGlueStick"]
+	path = third_party/LightGlueStick
+	url = https://github.com/aubingazhib/LightGlueStick
