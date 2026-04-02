@@ -154,6 +154,7 @@ class FeaturePairsDataset(torch.utils.data.Dataset):
         for suffix in ("0", "1"):
             line_keys = {
                 "lines": (0, 4),
+                "lines_junc_idx": (0, 2),
                 "line_descriptors": (0, 128),
                 "line_scores": (0,),
             }

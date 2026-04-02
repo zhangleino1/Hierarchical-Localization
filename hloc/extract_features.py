@@ -125,6 +125,25 @@ confs = {
             "resize_max": 1024,
         },
     },
+    "wireframe-superpoint": {
+        "output": "feats-wireframe-superpoint-r1600",
+        "model": {
+            "name": "wireframe",
+            "max_num_keypoints": 2048,
+            "max_num_lines": 300,
+            "force_num_keypoints": False,
+            "force_num_lines": False,
+            "nms_radius": 3,
+            "detection_threshold": 0.005,
+            "line_min_length": 15,
+            "merge_points": True,
+            "merge_line_endpoints": True,
+        },
+        "preprocessing": {
+            "grayscale": False,
+            "resize_max": 1600,
+        },
+    },
     # Global descriptors
     "dir": {
         "output": "global-feats-dir",
