@@ -14,7 +14,7 @@
     python demo.py --images  datasets/chuan/session_1765242012556 --outputs outputs/chuan2
     python demo.py --images  datasets/chuan/20260413 --outputs outputs/qi3
     python demo.py --images  datasets/session_1768869109532 --outputs outputs/chuan10
-    python demo.py --images  datasets/20260324 --outputs outputs/dalian
+    python demo.py --images  datasets/20260323 --outputs outputs/dalian
 
     # 仅定位模式（使用已有地图）
     python demo.py --images datasets/chuan/session_1766231113508 --outputs outputs/chuan4 --localization-only
@@ -93,7 +93,7 @@ CONTROL_POINTS = {
 }
 
 # 是否启用控制点标定(如果为False,则输出原始SfM相对坐标)
-ENABLE_CONTROL_POINTS = True
+ENABLE_CONTROL_POINTS = False
 
 
 # ============================================================================
@@ -620,6 +620,21 @@ def build_3d_map(
     logger.info("步骤 2/4: 生成图像配对...")
     num_images = len(mapping_images)
 
+    # 提取全局特征（MegaLoc），定位阶段检索配对时需要
+    logger.info("    提取 MegaLoc 全局特征...")
+    try:
+        extract_features.main(
+            RETRIEVAL_CONF,
+            images_dir,
+            image_list=mapping_images,
+            feature_path=retrieval_path,
+            overwrite=True,
+        )
+        log_feature_coverage(retrieval_path, mapping_images, "Mapping global features")
+    except Exception:
+        logger.exception("Step 2/4 failed while extracting retrieval features.")
+        raise
+
     if num_images <= 50:
         # 小数据集: 使用穷举匹配确保重建质量
         logger.info(f"  使用穷举匹配策略 ({num_images} 张图像)")
@@ -636,26 +651,11 @@ def build_3d_map(
                     pairs.add((a, b) if a < b else (b, a))
             return pairs
 
-        # 2.1 提取全局特征（MegaLoc）
-        logger.info("    提取 MegaLoc 全局特征...")
-        try:
-            extract_features.main(
-                RETRIEVAL_CONF,
-                images_dir,
-                image_list=mapping_images,
-                feature_path=retrieval_path,
-                overwrite=True
-            )
-            log_feature_coverage(retrieval_path, mapping_images, "Mapping global features")
-        except Exception:
-            logger.exception("Step 2/4 failed while extracting retrieval features.")
-            raise
-
-        # 2.2 相邻帧配对
+        # 2.1 相邻帧配对
         logger.info(f"    生成相邻帧配对 (window={seq_window})...")
         sequential_pairs = build_sequential_pairs(mapping_images, seq_window)
 
-        # 2.3 检索配对
+        # 2.2 检索配对
         retrieval_topk = min(max(retrieval_topk, 1), max(num_images - 1, 1))
         logger.info(f"    生成检索配对 (topk={retrieval_topk})...")
         retrieval_pairs_path = outputs_dir / "pairs-retrieval.txt"
@@ -669,7 +669,7 @@ def build_3d_map(
             for a, b in read_pairs_file(retrieval_pairs_path)
         }
 
-        # 2.4 合并并写入pairs-sfm.txt
+        # 2.3 合并并写入pairs-sfm.txt
         merged_pairs = sequential_pairs | retrieval_pairs
         write_pairs_file(sfm_pairs, merged_pairs)
         logger.info(f"    生成 {len(merged_pairs)} 个图像配对")
@@ -725,12 +725,8 @@ def build_3d_map(
         logger.info(f"  平均轨迹长度: {model.compute_mean_track_length():.2f}")
         logger.info(f"  平均重投影误差: {model.compute_mean_reprojection_error():.2f} px")
     else:
-        logger.error("✗ 重建失败!")
-        raise RuntimeError("三维重建失败")
-
-    if model is None:
         log_colmap_log_tail(sfm_dir)
-        raise RuntimeError("3D reconstruction failed")
+        raise RuntimeError("三维重建失败")
 
     return model
 
@@ -784,12 +780,12 @@ def localize_queries(
         features_h5,
         "Reference local features",
     )
-    extract_features.main(
+    ensure_feature_cache(
         LOCAL_FEATURE_CONF,
         images_dir,
-        image_list=query_images,
-        feature_path=features_h5,
-        overwrite=True
+        query_images,
+        features_h5,
+        "Query local features",
     )
     log_feature_coverage(features_h5, query_images + reference_images, "Localization local features")
 
@@ -800,12 +796,12 @@ def localize_queries(
         retrieval_h5,
         "Reference global features",
     )
-    extract_features.main(
+    ensure_feature_cache(
         RETRIEVAL_CONF,
         images_dir,
-        image_list=query_images,
-        feature_path=retrieval_h5,
-        overwrite=True,
+        query_images,
+        retrieval_h5,
+        "Query global features",
     )
     log_feature_coverage(
         retrieval_h5,
@@ -822,7 +818,6 @@ def localize_queries(
         num_matched=retrieval_topk,
         query_list=query_images,
         db_list=reference_images,
-        db_descriptors=retrieval_h5,
     )
     query_to_refs = group_pairs_by_query(loc_pairs)
     logger.info(
@@ -1030,15 +1025,15 @@ def main():
         help="query图像子目录名称"
     )
     parser.add_argument(
-        "--seq-window", type=int, default=50,
+        "--seq-window", type=int, default=10,
         help="相邻帧配对窗口"
     )
     parser.add_argument(
-        "--retrieval-topk", type=int, default=30,
+        "--retrieval-topk", type=int, default=10,
         help="建图阶段检索配对 topk"
     )
     parser.add_argument(
-        "--loc-retrieval-topk", type=int, default=20,
+        "--loc-retrieval-topk", type=int, default=10,
         help="定位阶段 MegaLoc 候选参考图像 topk"
     )
     parser.add_argument(
@@ -1047,7 +1042,7 @@ def main():
     )
     parser.add_argument(
         "--localization-only", action="store_true",
-        help="仅定位模式（跳过建图，使用已有3D地图）"
+        help="仅定位模式（跳过建图，使用已有3D地图）"    
     )
 
     args = parser.parse_args()
